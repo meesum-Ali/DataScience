@@ -5,11 +5,13 @@ Created on Sat Jan  5 19:36:18 2019
 
 @author: Meesum
 """
+#Importing required libraries
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys
 import os
+#Checking current working directory
 os.getcwd()
 
 # lsOfFileNames => will contain all file names and lsDataFramesForHist => will contain all data frames
@@ -17,61 +19,91 @@ lsOfFileNames = []
 lsDataFramesForHist = []
 lsDataFramesForTimeSeries = {}
     
-#Iterate over folder and append filenames in list declared above. Actual filenames start from 8th index
-for files in os.walk("./AI_WaseemHaider/set-a/"):
+#Iterate over folder and append filenames in list declared above. 
+for files in os.walk("./AI_WaseemHaider/set-a/"):#Make sure to give relative or absolute path to set-a folder
     for filename in files:
         lsOfFileNames.append(filename)
 # print(lsOfFileNames)
+# Actual filenames start from 2nd index
 lsOfFileNames = lsOfFileNames[2]
 
+##################################################################################
 def getTimeSeries(filename, paramName):
+    ''' This function takes filename i.e. patient record id 
+    and the parameter of which time series is needed 
+    and returns time series along with unique parameters of that patient record 
+    '''
+    
+    # If record is missing from list of data frames then return
     if (filename + '.txt') not in lsDataFramesForTimeSeries.keys():
         return
     
+    # Reading relevant data frame
     tdf = lsDataFramesForTimeSeries[filename + '.txt']
+    # Extracting unique parameters
     params = tdf.Parameter.unique()
 #    print(params)
+    # if parameter passed in argument is not availabble then return
     if paramName not in params:
         return
-                
+    # converting time column from string to date time type
     tdf.Time = pd.to_datetime(tdf.Time,format= '%H:%M:%S').dt.time
+    # Grouping dataframe on parameters
     groups = tdf.groupby('Parameter')
 #    tdf.describe()
+    # fetching required group based on parameter name provided in argument
     ts = groups.get_group(paramName)
+    # Making Time as index
     ts.set_index(ts.Time, inplace=False)
+    # Dropping irrelevant columns
     ts = ts.drop(columns=['Time','Parameter'])
-    
+    # returning time series and unique parameters
     return ts,params.tolist()
-
+##################################################################################
+    
+##################################################################################
 def getParams(filename):
+    ''' This function takes filename i.e. patient record id 
+    and returns unique parameters of that patient record 
+    '''
     if (filename + '.txt') not in lsDataFramesForTimeSeries.keys():
         return
     
     tdf = lsDataFramesForTimeSeries[filename + '.txt']
     return tdf.Parameter.unique().tolist()
-    
+##################################################################################
+
+##################################################################################
+# importing numpy for calculating slopes via polyfit
 import numpy as np
 def getSlopes(recordID):
-    
+    # fetching unique parameters of Patient record
     args = getParams(recordID)
     slopes = {}
+    # iterating over each parameter except record id
     for a in args:
         if a == "RecordID":
             continue
+        # fetching time series against each parameter
         time_series, p = getTimeSeries(recordID,a)
+        # increasing index by 1 to avoid divide by zero exception
         time_series.index = time_series.index + 1
+        # calculating slopes via polyfit
         slopes[a+"_slope"] = time_series.apply(lambda x: np.polyfit(time_series.index, x, 1)[0])
 #    print(slopes)
     return slopes
+##################################################################################
 
 # Iterate over each filename and read the data frame. 
 # drop Time col as it is not needed in plotting histograms.
 # Group the dataframe WRT Parameter and aggregate Value col.
 # Append the transpose of grouped dataframe to dataframes list.
 for filename in lsOfFileNames:
+    # read patient record as dataframe
     d = pd.read_csv("./AI_WaseemHaider/set-a/" + filename)
+    # reformating time column
     d.Time = d.Time.map(lambda x: "00:"+x)
-       
+    # appending dataframe against patient record id
     lsDataFramesForTimeSeries[filename] = d
     
 #    params = d.Parameter.unique().tolist()
@@ -81,10 +113,12 @@ for filename in lsOfFileNames:
 #    ts.set_index(ts.Time, inplace=False)
 #    ts = ts.drop(columns=['Time','Parameter'])
     recordId = filename.strip(".txt")
+    # fetching slopes of each parameter
     slopes_df = pd.DataFrame(getSlopes(recordId))
     d = d.drop(columns=['Time'])
     d = d[d.Parameter != "RecordID"]
     # Grouping by aggregates
+    # creating new features from existing ones
     groups = d.groupby(['Parameter'])
     e_med = groups.agg({'Value':'median'}).T
     e_max = groups.agg({'Value':'max'}).T
@@ -110,6 +144,7 @@ for filename in lsOfFileNames:
     lsDataFramesForHist.append(df_con)
     print(recordId)
     
+# reading outcome file as dataframe
 outcome = pd.read_csv("./AI_WaseemHaider/Outcomes-a.txt",sep=',')   
 outcome['RecordID'] = outcome['RecordID'].astype(str)
 
@@ -119,9 +154,9 @@ DfForHistogram = pd.concat(lsDataFramesForHist)
 
 # Fill NaN values with median
 DfForHistogram = DfForHistogram.fillna(DfForHistogram.median())
-
+# merge outcome dataframe with patients records
 df_outer = pd.merge(DfForHistogram, outcome, on='RecordID', how='outer')
-
+# saving finat data frame as csv
 df_outer.to_csv("Final_Dataset.csv")
 
 #
